@@ -1,0 +1,20 @@
+2025-09-10 08:00:01 INFO [WebServer] Server starting on port 8080
+2025-09-10 08:00:02 INFO [Database] Connected to database: user_db
+2025-09-10 08:00:05 INFO [Auth] Loading authentication module
+2025-09-10 08:00:10 WARN [Cache] Cache size approaching limit: 85% used
+2025-09-10 08:01:15 INFO [WebServer] Processing GET /api/users request
+2025-09-10 08:01:18 INFO [Database] Query executed successfully: SELECT * FROM users
+2025-09-10 08:02:22 ERROR [Auth] Failed login attempt for user: admin@example.com
+2025-09-10 08:02:45 INFO [WebServer] Processing POST /api/login request
+2025-09-10 08:03:01 INFO [Auth] User authenticated: user123@example.com
+2025-09-10 08:03:15 WARN [Database] Connection pool running low: 3 connections available
+2025-09-10 08:04:30 INFO [WebServer] Processing GET /api/dashboard request
+2025-09-10 08:04:35 INFO [Cache] Cache hit for key: user_session_abc123
+2025-09-10 08:05:12 ERROR [Database] Connection timeout after 30 seconds
+2025-09-10 08:05:15 WARN [WebServer] Request timeout for /api/reports
+2025-09-10 08:06:00 INFO [Database] Database connection restored
+2025-09-10 08:06:30 INFO [WebServer] Processing PUT /api/user/profile request
+2025-09-10 08:07:45 WARN [Auth] Password change requested for user: test@example.com
+2025-09-10 08:08:12 INFO [Cache] Cache cleared for user session cleanup
+2025-09-10 08:09:01 ERROR [WebServer] Internal server error: NullPointerException
+2025-09-10 08:09:30 INFO [WebServer] Server gracefully shutting down

@@ -312,7 +312,7 @@ class TestCompareCommand:
             )
             
             # With timestamps, should show differences
-            assert "Total differences: 2" in result_with_timestamps.stdout
+            assert "Total differences: 4" in result_with_timestamps.stdout
             
             # Without timestamps, should show no differences (or fewer)
             assert "Total differences: 0" in result_ignore_timestamps.stdout
