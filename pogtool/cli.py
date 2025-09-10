@@ -160,6 +160,7 @@ def compare(
 @click.option("-n", "--normalize-timestamps", is_flag=True, help="Normalize timestamps to standard format")
 @click.option("-d", "--deduplicate", is_flag=True, help="Remove duplicate entries")
 @click.option("-f", "--follow", is_flag=True, help="Stream mode: continuously merge growing files")
+@click.option("-e", "--pattern", type=str, help="Only merge lines containing this pattern (used with --follow)")
 @click.option("-C", "--compressed", is_flag=True, help="Support compressed input files (.gz)")
 @click.help_option("-h", "--help")
 def merge(
@@ -169,6 +170,7 @@ def merge(
     normalize_timestamps: bool,
     deduplicate: bool,
     follow: bool,
+    pattern: Optional[str],
     compressed: bool,
 ) -> None:
     """
@@ -187,6 +189,7 @@ def merge(
         normalize_timestamps=normalize_timestamps,
         deduplicate=deduplicate,
         follow=follow,
+        pattern=pattern,
         compressed=compressed,
     )
 

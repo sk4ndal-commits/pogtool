@@ -570,3 +570,82 @@ Jan 1 10:00:02 2024 WARN Message 2"""
             os.unlink(temp_path2)
             if os.path.exists(output_path):
                 os.unlink(output_path)
+
+    def test_merge_follow_mode_with_pattern_filter(self):
+        """Test that --follow with -e pattern only merges lines containing the pattern."""
+        import time
+        import threading
+        
+        # Create temporary files
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f1:
+            f1.write("2025-01-01T10:00:00 [INFO] Existing entry\n")
+            temp_path1 = f1.name
+            
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f2:
+            f2.write("2025-01-01T10:00:30 [INFO] Another existing entry\n")
+            temp_path2 = f2.name
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as output_file:
+            output_path = output_file.name
+        
+        def add_mixed_entries():
+            """Add entries with and without the pattern."""
+            time.sleep(1.5)
+            
+            with open(temp_path1, 'a') as f:
+                f.write("2025-01-01T10:02:00 [ERROR] Database connection failed\n")
+                f.write("2025-01-01T10:02:10 [INFO] Regular info message\n")
+                f.write("2025-01-01T10:02:20 [ERROR] Another error occurred\n")
+            
+            with open(temp_path2, 'a') as f:
+                f.write("2025-01-01T10:02:30 [WARN] Warning message\n")
+                f.write("2025-01-01T10:02:40 [ERROR] Critical error detected\n")
+        
+        try:
+            # Start thread to add entries
+            thread = threading.Thread(target=add_mixed_entries)
+            thread.start()
+            
+            # Start merge process with --follow and -e ERROR pattern
+            process = subprocess.Popen(
+                ['python3', 'pogtool.py', 'merge', '--follow', '-e', 'ERROR', '--output', output_path, temp_path1, temp_path2],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            # Wait for entries and processing
+            thread.join()
+            time.sleep(1)
+            
+            # Stop the process
+            process.terminate()
+            process.wait(timeout=5)
+            
+            # Check output file - should only contain lines with ERROR pattern
+            with open(output_path, 'r') as f:
+                content = f.read()
+            
+            lines = [line.strip() for line in content.strip().split('\n') if line.strip()]
+            
+            # Should not contain existing entries
+            assert not any("Existing entry" in line for line in lines), "Follow mode included existing content"
+            
+            # Should only contain ERROR entries, not INFO or WARN
+            assert any("Database connection failed" in line for line in lines), "Missing ERROR entry from file1"
+            assert any("Another error occurred" in line for line in lines), "Missing second ERROR entry from file1"
+            assert any("Critical error detected" in line for line in lines), "Missing ERROR entry from file2"
+            
+            # Should NOT contain non-ERROR entries
+            assert not any("Regular info message" in line for line in lines), "Pattern filter failed - included INFO message"
+            assert not any("Warning message" in line for line in lines), "Pattern filter failed - included WARN message"
+            
+            # Should have exactly 3 ERROR entries (pattern filter worked)
+            assert len(lines) == 3, f"Expected 3 filtered lines, got {len(lines)}: {lines}"
+            
+        finally:
+            os.unlink(temp_path1)
+            os.unlink(temp_path2)
+            if os.path.exists(output_path):
+                os.unlink(output_path)

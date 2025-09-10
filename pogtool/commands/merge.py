@@ -45,6 +45,7 @@ class MergeCommand(Command):
         normalize_timestamps: bool,
         deduplicate: bool,
         follow: bool,
+        pattern: Optional[str],
         compressed: bool,
     ) -> None:
         """
@@ -57,6 +58,7 @@ class MergeCommand(Command):
             normalize_timestamps: Normalize timestamps to standard format
             deduplicate: Remove duplicate entries
             follow: Stream mode for continuously merging growing files
+            pattern: Only merge lines containing this pattern (used with --follow)
             compressed: Support compressed input files
         """
         if not files:
@@ -70,7 +72,7 @@ class MergeCommand(Command):
         try:
             if follow:
                 self._merge_follow_mode(
-                    list(files), output, tag, deduplicate
+                    list(files), output, tag, deduplicate, pattern
                 )
             else:
                 self._merge_static_files(
@@ -138,6 +140,7 @@ class MergeCommand(Command):
         output: Optional[str],
         tag: bool,
         deduplicate: bool,
+        pattern: Optional[str],
     ) -> None:
         """
         Merge files in follow mode (continuously monitor for new entries).
@@ -151,6 +154,7 @@ class MergeCommand(Command):
             output: Output file path
             tag: Whether to tag entries with source
             deduplicate: Whether to remove duplicates
+            pattern: Only merge lines containing this pattern
         """
         import time
         from collections import deque
@@ -193,6 +197,10 @@ class MergeCommand(Command):
                             new_file_entries = entries[last_position:]
                             
                             for entry in new_file_entries:
+                                # Filter by pattern if specified
+                                if pattern and pattern not in entry.raw_line:
+                                    continue
+                                
                                 # Tag with source if requested
                                 if tag:
                                     from dataclasses import replace
