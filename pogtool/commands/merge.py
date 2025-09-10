@@ -142,6 +142,10 @@ class MergeCommand(Command):
         """
         Merge files in follow mode (continuously monitor for new entries).
         
+        Only processes entries that are added AFTER the command starts.
+        This means existing content in files is ignored, and only new
+        additions are merged and output.
+        
         Args:
             files: List of files to follow
             output: Output file path
@@ -153,8 +157,18 @@ class MergeCommand(Command):
         
         print(f"Following {len(files)} files for new entries (Ctrl+C to stop)...")
         
-        # Keep track of last read positions
-        file_positions = {file_path: 0 for file_path in files}
+        # Initialize file positions to current end of files (skip existing content)
+        file_positions = {}
+        for file_path in files:
+            try:
+                # Get current entry count to skip existing content
+                existing_entries = list(self._parse_files([file_path], follow=False))
+                file_positions[file_path] = len(existing_entries)
+                print(f"Skipping {len(existing_entries)} existing entries in {file_path}")
+            except Exception as e:
+                print(f"Warning: Error reading {file_path}: {e}")
+                file_positions[file_path] = 0
+        
         seen_entries = set() if deduplicate else None
         
         # Open output file if specified
@@ -238,5 +252,5 @@ class MergeCommand(Command):
             parts = [timestamp_str, level_str, entry.message or entry.raw_line]
             return " ".join(filter(None, parts))
         else:
-            # Use original raw line
-            return entry.raw_line
+            # Use message if it was modified (e.g., for tagging), otherwise use raw line
+            return entry.message if entry.message != entry.raw_line.strip() else entry.raw_line

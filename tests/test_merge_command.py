@@ -418,3 +418,155 @@ Jan 1 10:00:02 2024 WARN Message 2"""
         finally:
             if os.path.exists(output_path):
                 os.unlink(output_path)
+
+    def test_merge_follow_mode_skips_existing_content(self):
+        """Test that --follow flag only processes new entries added after command starts."""
+        import time
+        import threading
+        
+        # Create temporary files with initial content
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f1:
+            f1.write("2025-01-01T10:00:00 [INFO] Initial entry 1\n")
+            f1.write("2025-01-01T10:01:00 [INFO] Initial entry 2\n")
+            temp_path1 = f1.name
+            
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f2:
+            f2.write("2025-01-01T10:00:30 [INFO] Initial entry 3\n")  
+            f2.write("2025-01-01T10:01:30 [INFO] Initial entry 4\n")
+            temp_path2 = f2.name
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as output_file:
+            output_path = output_file.name
+        
+        def add_new_entries():
+            """Add new entries to log files after a delay."""
+            time.sleep(1.5)  # Wait for follow mode to start
+            
+            with open(temp_path1, 'a') as f:
+                f.write("2025-01-01T10:02:00 [INFO] New entry after follow started\n")
+            
+            with open(temp_path2, 'a') as f:
+                f.write("2025-01-01T10:02:30 [INFO] Another new entry\n")
+            
+            time.sleep(1)
+            
+            with open(temp_path1, 'a') as f:
+                f.write("2025-01-01T10:03:00 [INFO] Final new entry\n")
+        
+        try:
+            # Start thread to add entries
+            thread = threading.Thread(target=add_new_entries)
+            thread.start()
+            
+            # Start merge process with --follow
+            process = subprocess.Popen(
+                ['python3', 'pogtool.py', 'merge', '--follow', '--output', output_path, temp_path1, temp_path2],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            # Wait for new entries to be added
+            thread.join()
+            time.sleep(1)  # Let follow mode process the new entries
+            
+            # Stop the process
+            process.terminate()
+            process.wait(timeout=5)
+            
+            # Check output file - should only contain new entries
+            with open(output_path, 'r') as f:
+                content = f.read()
+            
+            lines = [line.strip() for line in content.strip().split('\n') if line.strip()]
+            
+            # Should NOT contain initial entries
+            assert not any("Initial entry" in line for line in lines), "Follow mode included existing content"
+            
+            # Should contain only new entries  
+            assert any("New entry after follow started" in line for line in lines), "Missing new entry"
+            assert any("Another new entry" in line for line in lines), "Missing another new entry"
+            assert any("Final new entry" in line for line in lines), "Missing final new entry"
+            
+            # Should be chronologically ordered
+            timestamps = []
+            for line in lines:
+                if line.startswith('2025-01-01T10:'):
+                    timestamps.append(line[:19])
+            
+            assert timestamps == sorted(timestamps), "New entries not chronologically ordered"
+            
+        finally:
+            os.unlink(temp_path1)
+            os.unlink(temp_path2)
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_merge_follow_mode_with_tag_flag(self):
+        """Test that --follow works correctly with --tag flag."""
+        import time
+        import threading
+        
+        # Create temporary files
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f1:
+            f1.write("2025-01-01T10:00:00 [INFO] Existing entry\n")
+            temp_path1 = f1.name
+            
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f2:
+            f2.write("2025-01-01T10:00:30 [INFO] Another existing entry\n")
+            temp_path2 = f2.name
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as output_file:
+            output_path = output_file.name
+        
+        def add_tagged_entries():
+            """Add entries to be tagged."""
+            time.sleep(1.5)
+            
+            with open(temp_path1, 'a') as f:
+                f.write("2025-01-01T10:02:00 [INFO] Tagged entry from file1\n")
+            
+            with open(temp_path2, 'a') as f:
+                f.write("2025-01-01T10:02:30 [INFO] Tagged entry from file2\n")
+        
+        try:
+            # Start thread to add entries
+            thread = threading.Thread(target=add_tagged_entries)
+            thread.start()
+            
+            # Start merge process with --follow and --tag
+            process = subprocess.Popen(
+                ['python3', 'pogtool.py', 'merge', '--follow', '--tag', '--output', output_path, temp_path1, temp_path2],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            # Wait for entries and processing
+            thread.join()
+            time.sleep(1)
+            
+            # Stop the process
+            process.terminate()
+            process.wait(timeout=5)
+            
+            # Check output file
+            with open(output_path, 'r') as f:
+                content = f.read()
+            
+            lines = [line.strip() for line in content.strip().split('\n') if line.strip()]
+            
+            # Should not contain existing entries
+            assert not any("Existing entry" in line for line in lines), "Follow mode included existing content"
+            
+            # Should contain tagged new entries (format: [filepath] message)
+            assert any(f"[{temp_path1}]" in line and "Tagged entry from file1" in line for line in lines), "Missing tagged entry from file1"
+            assert any(f"[{temp_path2}]" in line and "Tagged entry from file2" in line for line in lines), "Missing tagged entry from file2"
+            
+        finally:
+            os.unlink(temp_path1)
+            os.unlink(temp_path2)
+            if os.path.exists(output_path):
+                os.unlink(output_path)
