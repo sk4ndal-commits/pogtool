@@ -1,13 +1,14 @@
 """
 Integration tests for the compare command.
 
-Tests the compare command CLI functionality to ensure that output sections
-are displayed correctly based on the provided flags.
+Tests the compare command CLI functionality with actual usage scenarios
+to ensure output content and structure are correct, similar to user examples.
 """
 
 import subprocess
 import tempfile
 import os
+import json
 import pytest
 
 
@@ -155,3 +156,167 @@ class TestCompareCommand:
         # Should fail with appropriate error code and message
         assert result.returncode == 2  # CLI validation error
         assert "does not exist" in result.stderr
+
+    def test_compare_actual_usage_basic_output_structure(self):
+        """Test actual usage: validate basic output structure and content."""
+        # Use real test log files
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'compare', 'testlogs/app1.log', 'testlogs/app2.log'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result.returncode == 0
+        output = result.stdout
+        
+        # Validate output structure
+        assert "Log Comparison Result" in output
+        assert "Added lines:" in output
+        assert "Removed lines:" in output
+        assert "Modified lines:" in output
+        assert "Common lines:" in output
+        assert "Total differences:" in output
+        assert "Added Lines:" in output
+        assert "Removed Lines:" in output
+        
+        # Validate actual content from the files
+        assert "WebServer] Server starting on port 8080" in output
+        assert "EmailService] Email service initialized" in output
+
+    def test_compare_actual_usage_json_output(self):
+        """Test actual usage: validate JSON output structure and content."""
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'compare', 'testlogs/app1.log', 'testlogs/app2.log', '--json'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result.returncode == 0
+        
+        # Parse and validate JSON structure
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            pytest.fail("Output is not valid JSON")
+        
+        # Validate JSON structure
+        assert "summary" in data
+        assert "details" in data
+        assert "added_lines" in data["summary"]
+        assert "removed_lines" in data["summary"]
+        assert "modified_lines" in data["summary"]
+        assert "common_lines" in data["summary"]
+        assert "total_differences" in data["summary"]
+        assert "has_differences" in data["summary"]
+        
+        # Validate details section
+        assert "added_lines" in data["details"]
+        assert "removed_lines" in data["details"]
+        assert "modified_lines" in data["details"]
+        assert "common_lines" in data["details"]
+        
+        # Validate actual counts match between files
+        assert data["summary"]["added_lines"] > 0
+        assert data["summary"]["removed_lines"] > 0
+        assert data["summary"]["has_differences"] is True
+
+    def test_compare_actual_usage_only_filter(self):
+        """Test actual usage: validate --only filter works correctly."""
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'compare', 'testlogs/app1.log', 'testlogs/app2.log', '--only', 'ERROR'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result.returncode == 0
+        output = result.stdout
+        
+        # Should only show ERROR level differences
+        assert "ERROR" in output
+        # Should not contain other levels when filtering
+        lines = output.split('\n')
+        log_lines = [line for line in lines if line.startswith('+') or line.startswith('-')]
+        for line in log_lines:
+            # Every actual log line should contain ERROR when filtered
+            if any(keyword in line for keyword in ['WebServer', 'Database', 'Auth', 'EmailService', 'FileManager', 'Security']):
+                assert "ERROR" in line
+
+    def test_compare_actual_usage_summary_only(self):
+        """Test actual usage: validate --summary flag shows only summary."""
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'compare', 'testlogs/app1.log', 'testlogs/app2.log', '--summary'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result.returncode == 0
+        output = result.stdout
+        
+        # Should show summary
+        assert "Comparison Summary:" in output
+        assert "Added lines:" in output
+        assert "Removed lines:" in output
+        assert "Modified lines:" in output
+        assert "Common lines:" in output
+        assert "Total differences:" in output
+        
+        # Should NOT show detailed line-by-line comparison
+        assert "Added Lines:" not in output
+        assert "Removed Lines:" not in output
+        assert "WebServer] Server starting" not in output
+
+    def test_compare_actual_usage_identical_files(self):
+        """Test actual usage: validate behavior with identical files."""
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'compare', 'testlogs/app1.log', 'testlogs/app1.log'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result.returncode == 0
+        output = result.stdout
+        
+        # Should show no differences
+        assert "Added lines:    0" in output
+        assert "Removed lines:  0" in output
+        assert "Modified lines: 0" in output
+        assert "Total differences: 0" in output
+        
+        # Should not have Added Lines or Removed Lines sections
+        assert "Added Lines:" not in output
+        assert "Removed Lines:" not in output
+
+    def test_compare_actual_usage_ignore_timestamps(self):
+        """Test actual usage: validate --ignore-timestamps works correctly."""
+        # Create two files with same content but different timestamps
+        content1 = """2024-01-01 10:00:01 INFO Test message
+2024-01-01 10:00:02 ERROR Test error"""
+        
+        content2 = """2024-12-25 15:30:45 INFO Test message
+2024-12-25 15:30:46 ERROR Test error"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f1:
+            f1.write(content1)
+            temp_path1 = f1.name
+            
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f2:
+            f2.write(content2)
+            temp_path2 = f2.name
+        
+        try:
+            # Without ignore-timestamps should show differences
+            result_with_timestamps = subprocess.run(
+                ['python3', 'pogtool.py', 'compare', temp_path1, temp_path2], 
+                capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            # With ignore-timestamps should show no differences
+            result_ignore_timestamps = subprocess.run(
+                ['python3', 'pogtool.py', 'compare', temp_path1, temp_path2, '--ignore-timestamps'], 
+                capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            # With timestamps, should show differences
+            assert "Total differences: 2" in result_with_timestamps.stdout
+            
+            # Without timestamps, should show no differences (or fewer)
+            assert "Total differences: 0" in result_ignore_timestamps.stdout
+            
+        finally:
+            os.unlink(temp_path1)
+            os.unlink(temp_path2)

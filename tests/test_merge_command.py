@@ -1,13 +1,14 @@
 """
 Integration tests for the merge command.
 
-Tests the merge command CLI functionality to ensure that output sections
-are displayed correctly based on the provided flags.
+Tests the merge command CLI functionality with actual usage scenarios
+to ensure output content and structure are correct, similar to user examples.
 """
 
 import subprocess
 import tempfile
 import os
+import json
 import pytest
 
 
@@ -194,3 +195,227 @@ class TestMergeCommand:
         # Should show error message for single file merge
         assert len(result.stdout) > 0
         assert "At least two files are required for merging" in result.stdout
+
+    def test_merge_actual_usage_basic_chronological_order(self):
+        """Test actual usage: validate chronological merging of real log files."""
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'merge', 'testlogs/app1.log', 'testlogs/app2.log'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result.returncode == 0
+        output_lines = result.stdout.strip().split('\n')
+        
+        # Should have entries from both files
+        assert len(output_lines) > 0
+        
+        # Validate chronological order - extract timestamps and verify ordering
+        timestamps = []
+        for line in output_lines:
+            if line.startswith('2025-09-10'):
+                timestamp_str = line[:19]  # Extract "2025-09-10 HH:MM:SS"
+                timestamps.append(timestamp_str)
+        
+        # Timestamps should be in chronological order
+        assert timestamps == sorted(timestamps), "Merged entries are not in chronological order"
+        
+        # Should contain entries from both files
+        assert any("WebServer] Server starting on port 8080" in line for line in output_lines)
+        assert any("EmailService] Email service initialized" in line for line in output_lines)
+
+    def test_merge_actual_usage_with_tag_flag(self):
+        """Test actual usage: validate --tag flag adds source file information."""
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'merge', 'testlogs/app1.log', 'testlogs/app2.log', '--tag'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result.returncode == 0
+        output = result.stdout
+        
+        # Should contain source file tags
+        assert "app1.log" in output or "[app1]" in output or "testlogs/app1.log" in output
+        assert "app2.log" in output or "[app2]" in output or "testlogs/app2.log" in output
+
+    def test_merge_actual_usage_deduplicate_functionality(self):
+        """Test actual usage: validate --deduplicate removes duplicate entries."""
+        # First merge without deduplicate to see duplicates
+        result_with_dupes = subprocess.run(
+            ['python3', 'pogtool.py', 'merge', 'testlogs/app1.log', 'testlogs/app1.log'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        # Then merge with deduplicate
+        result_deduped = subprocess.run(
+            ['python3', 'pogtool.py', 'merge', 'testlogs/app1.log', 'testlogs/app1.log', '--deduplicate'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        assert result_with_dupes.returncode == 0
+        assert result_deduped.returncode == 0
+        
+        lines_with_dupes = len(result_with_dupes.stdout.strip().split('\n'))
+        lines_deduped = len(result_deduped.stdout.strip().split('\n'))
+        
+        # Deduplicated version should have fewer lines
+        assert lines_deduped <= lines_with_dupes
+        
+        # Original should have exactly double the entries (same file twice)
+        assert lines_with_dupes == 2 * lines_deduped
+
+    def test_merge_actual_usage_output_to_file(self):
+        """Test actual usage: validate --output flag writes to file correctly."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as temp_file:
+            output_path = temp_file.name
+        
+        try:
+            result = subprocess.run(
+                ['python3', 'pogtool.py', 'merge', 'testlogs/app1.log', 'testlogs/app2.log', '--output', output_path], 
+                capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            assert result.returncode == 0
+            # stdout should be empty when writing to file
+            assert len(result.stdout.strip()) == 0 or "merged and saved to" in result.stdout.lower()
+            
+            # File should exist and contain merged data
+            assert os.path.exists(output_path)
+            with open(output_path, 'r') as f:
+                content = f.read()
+                assert len(content) > 0
+                # Should contain entries from both files
+                assert "WebServer] Server starting on port 8080" in content
+                assert "EmailService] Email service initialized" in content
+                
+                # Should be chronologically ordered
+                lines = content.strip().split('\n')
+                timestamps = []
+                for line in lines:
+                    if line.startswith('2025-09-10'):
+                        timestamps.append(line[:19])
+                assert timestamps == sorted(timestamps)
+                
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_merge_actual_usage_normalize_timestamps(self):
+        """Test actual usage: validate --normalize-timestamps standardizes timestamp formats."""
+        # Create files with different timestamp formats
+        content1 = """2024-01-01 10:00:01 INFO Message 1
+Jan 1 10:00:02 2024 WARN Message 2"""
+        
+        content2 = """2024/01/01 10:00:03 ERROR Message 3
+01-01-2024 10:00:04 DEBUG Message 4"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f1:
+            f1.write(content1)
+            temp_path1 = f1.name
+            
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f2:
+            f2.write(content2)
+            temp_path2 = f2.name
+        
+        try:
+            result = subprocess.run(
+                ['python3', 'pogtool.py', 'merge', temp_path1, temp_path2, '--normalize-timestamps'], 
+                capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            assert result.returncode == 0
+            output = result.stdout
+            
+            # All timestamps should be normalized to a consistent format
+            lines = output.strip().split('\n')
+            timestamp_formats = set()
+            for line in lines:
+                if 'Message' in line:
+                    # Extract timestamp part (first 19 chars usually)
+                    timestamp_part = line[:19]
+                    # Check format pattern
+                    if timestamp_part.count('-') == 2 and timestamp_part.count(':') == 2:
+                        timestamp_formats.add('standard')
+                    else:
+                        timestamp_formats.add('other')
+            
+            # Should have consistent timestamp formatting
+            assert len(timestamp_formats) <= 1 or not timestamp_formats, "Timestamps not properly normalized"
+            
+        finally:
+            os.unlink(temp_path1)
+            os.unlink(temp_path2)
+
+    def test_merge_actual_usage_multiple_files_ordering(self):
+        """Test actual usage: validate merging three files maintains chronological order."""
+        # Create a third test file
+        content3 = """2025-09-10 08:00:30 INFO [ThirdApp] Third app started
+2025-09-10 08:01:30 WARN [ThirdApp] Third app warning
+2025-09-10 08:02:30 ERROR [ThirdApp] Third app error"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f3:
+            f3.write(content3)
+            temp_path3 = f3.name
+        
+        try:
+            result = subprocess.run(
+                ['python3', 'pogtool.py', 'merge', 'testlogs/app1.log', 'testlogs/app2.log', temp_path3], 
+                capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            assert result.returncode == 0
+            output_lines = result.stdout.strip().split('\n')
+            
+            # Should contain entries from all three files
+            assert any("WebServer] Server starting" in line for line in output_lines)
+            assert any("EmailService] Email service" in line for line in output_lines)
+            assert any("ThirdApp] Third app" in line for line in output_lines)
+            
+            # Should maintain chronological order
+            timestamps = []
+            for line in output_lines:
+                if line.startswith('2025-09-10'):
+                    timestamps.append(line[:19])
+            
+            assert timestamps == sorted(timestamps), "Three-file merge not chronologically ordered"
+            
+        finally:
+            os.unlink(temp_path3)
+
+    def test_merge_actual_usage_error_handling_missing_files(self):
+        """Test actual usage: validate proper error handling for missing files."""
+        result = subprocess.run(
+            ['python3', 'pogtool.py', 'merge', 'nonexistent1.log', 'nonexistent2.log'], 
+            capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+        )
+        
+        # Should fail with appropriate error
+        assert result.returncode != 0
+        assert "does not exist" in result.stderr or "not found" in result.stderr.lower()
+
+    def test_merge_actual_usage_combined_flags(self):
+        """Test actual usage: validate multiple flags work together correctly."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as temp_file:
+            output_path = temp_file.name
+        
+        try:
+            result = subprocess.run(
+                ['python3', 'pogtool.py', 'merge', 'testlogs/app1.log', 'testlogs/app2.log', 
+                 '--output', output_path, '--tag', '--normalize-timestamps'], 
+                capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            
+            assert result.returncode == 0
+            
+            # File should exist and contain merged data with tags
+            assert os.path.exists(output_path)
+            with open(output_path, 'r') as f:
+                content = f.read()
+                assert len(content) > 0
+                
+                # Should have source file information due to --tag
+                assert ("app1" in content or "app2" in content or 
+                       "testlogs" in content), "Tag information not found in output"
+                
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)

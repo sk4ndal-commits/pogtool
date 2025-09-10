@@ -117,9 +117,13 @@ class StatsCommand(Command):
             if not any([show_levels, show_patterns, show_top, show_time_groups]):
                 show_levels = show_patterns = show_top = show_time_groups = True
             
+            # If --only flag is used, suppress Top Messages (show only levels)
+            if only:
+                show_top = False
+            
             # Format and output results
-            if output_json or output_csv:
-                # JSON and CSV formatters don't support selective sections yet
+            if output_csv:
+                # CSV formatter doesn't support selective sections yet
                 output = formatter.format_stats(stats)
             else:
                 output = formatter.format_stats(stats, show_levels, show_patterns, show_top, show_time_groups)

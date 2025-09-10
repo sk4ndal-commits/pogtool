@@ -24,17 +24,33 @@ class JsonFormatter(LogFormatter):
         """
         self.indent = indent
     
-    def format_stats(self, stats: StatsSummary) -> str:
+    def format_stats(self, stats: StatsSummary, show_levels: bool = True, show_patterns: bool = True, show_top: bool = True, show_time_groups: bool = True) -> str:
         """
         Format statistics summary as JSON.
         
         Args:
             stats: Statistics summary to format
+            show_levels: Whether to include level counts
+            show_patterns: Whether to include pattern counts
+            show_top: Whether to include top messages
+            show_time_groups: Whether to include time groups
             
         Returns:
             JSON string
         """
-        return json.dumps(stats.to_dict(), indent=self.indent, ensure_ascii=False)
+        data = stats.to_dict()
+        
+        # Remove sections based on flags
+        if not show_levels:
+            data.pop("level_counts", None)
+        if not show_patterns:
+            data.pop("pattern_counts", None)
+        if not show_top:
+            data.pop("top_messages", None)
+        if not show_time_groups:
+            data.pop("time_groups", None)
+            
+        return json.dumps(data, indent=self.indent, ensure_ascii=False)
     
     def format_comparison(self, result: ComparisonResult) -> str:
         """
