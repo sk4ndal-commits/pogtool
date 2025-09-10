@@ -26,7 +26,20 @@ def cli() -> None:
     pass
 
 
-@cli.command()
+@cli.command(epilog="""Examples:
+
+  pogtool stats app.log --levels
+    → Count log levels in a single file
+
+  pogtool stats app1.log app2.log -e "timeout" -e "failed"
+    → Count specific patterns across multiple files
+
+  pogtool stats app.log --group-by minute --only ERROR --json
+    → Group errors by minute with JSON output
+
+  pogtool stats app.log --follow --top 5
+    → Live monitoring with top 5 messages
+""")
 @click.argument("files", nargs=-1, type=click.Path(exists=True, readable=True))
 @click.option("--levels", is_flag=True, help="Count lines by severity level (INFO, WARN, ERROR, etc.)")
 @click.option("-e", "--regex", "patterns", multiple=True, help="Count lines matching regex patterns")
@@ -52,23 +65,9 @@ def stats(
 ) -> None:
     """
     Analyze log files and generate statistics.
-    
-    Count log entries by severity, patterns, or time intervals.
-    Supports live monitoring and multiple output formats.
-    
-    Examples:
-    
-        # Count log levels in a single file
-        pogtool stats app.log --levels
-        
-        # Count specific patterns across multiple files
-        pogtool stats app1.log app2.log -e "timeout" -e "failed"
-        
-        # Group errors by minute with JSON output
-        pogtool stats app.log --group-by minute --only ERROR --json
-        
-        # Live monitoring with top 5 messages
-        pogtool stats app.log --follow --top 5
+
+    Count log entries by severity, patterns, or time intervals. Supports live
+    monitoring and multiple output formats.
     """
     from pogtool.commands.stats import StatsCommand
     
@@ -87,7 +86,20 @@ def stats(
     )
 
 
-@cli.command()
+@cli.command(epilog="""Examples:
+
+  pogtool compare old.log new.log
+    → Basic comparison
+
+  pogtool compare old.log new.log --only ERROR --color
+    → Compare only ERROR entries with colors
+
+  pogtool compare old.log new.log --ignore-timestamps --summary
+    → Ignore timestamps and show summary
+
+  pogtool compare old.log new.log --fuzzy --json
+    → Fuzzy matching with JSON output
+""")
 @click.argument("file1", type=click.Path(exists=True, readable=True))
 @click.argument("file2", type=click.Path(exists=True, readable=True))
 @click.option("--only", type=str, help="Only compare lines containing this severity level")
@@ -109,23 +121,9 @@ def compare(
 ) -> None:
     """
     Compare two log files and show differences.
-    
-    Display added, removed, or modified log entries between two files.
-    Supports filtering, colorized output, and various comparison modes.
-    
-    Examples:
-    
-        # Basic comparison
-        pogtool compare old.log new.log
-        
-        # Compare only ERROR entries with colors
-        pogtool compare old.log new.log --only ERROR --color
-        
-        # Ignore timestamps and show summary
-        pogtool compare old.log new.log --ignore-timestamps --summary
-        
-        # Fuzzy matching with JSON output
-        pogtool compare old.log new.log --fuzzy --json
+
+    Display added, removed, or modified log entries between two files. Supports
+    filtering, colorized output, and various comparison modes.
     """
     from pogtool.commands.compare import CompareCommand
     
@@ -142,7 +140,20 @@ def compare(
     )
 
 
-@cli.command()
+@cli.command(epilog="""Examples:
+
+  pogtool merge app1.log app2.log
+    → Merge two logs to stdout
+
+  pogtool merge *.log --tag --output merged.log
+    → Merge with filename tags to output file
+
+  pogtool merge app1.log app2.log --normalize-timestamps --deduplicate
+    → Normalize timestamps and deduplicate
+
+  pogtool merge app1.log app2.log --follow
+    → Stream mode for live merging
+""")
 @click.argument("files", nargs=-1, type=click.Path(exists=True, readable=True))
 @click.option("-o", "--output", type=click.Path(), help="Output file (default: stdout)")
 @click.option("--tag", is_flag=True, help="Add filename as tag/column to each entry")
@@ -162,23 +173,9 @@ def merge(
 ) -> None:
     """
     Merge multiple log files chronologically.
-    
+
     Combine log files by timestamp while maintaining chronological order.
     Supports various timestamp formats and streaming mode.
-    
-    Examples:
-    
-        # Merge two logs to stdout
-        pogtool merge app1.log app2.log
-        
-        # Merge with filename tags to output file
-        pogtool merge *.log --tag --output merged.log
-        
-        # Normalize timestamps and deduplicate
-        pogtool merge app1.log app2.log --normalize-timestamps --deduplicate
-        
-        # Stream mode for live merging
-        pogtool merge app1.log app2.log --follow
     """
     from pogtool.commands.merge import MergeCommand
     
